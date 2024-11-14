@@ -109,7 +109,7 @@ func (r *recorder) String() string {
 		v := r.list[k]
 		w.Write([]string{
 			k,
-			fmt.Sprintf("Duplicate Request Count %d, Bytes %s, all targets %v", v.RequestCount, v.GotBytes, cleanList(v.List)),
+			fmt.Sprintf("(重复的请求过多) Duplicate Request Count %d, Bytes %s, targets %v, https://github.com/DaoCloud/public-image-mirror/issues/34109", v.RequestCount, v.GotBytes, cleanList(v.List)),
 		})
 	}
 	w.Flush()
