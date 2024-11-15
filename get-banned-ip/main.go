@@ -22,7 +22,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const getSQL = `
+const getIPAndPathSQL = `
 SELECT
     RemoteIP AS ip,
     count(*) AS request_count,
@@ -33,15 +33,28 @@ GROUP BY
     ip, path
 HAVING
     (
-        request_count > 2 AND
-    	got_bytes > 2 * 1024 * 1024 * 1024
-    ) OR (
-        request_count > 8 AND
+        request_count > 1 AND
     	got_bytes > 1024 * 1024 * 1024
     ) OR (
-        request_count > 32 AND
-    	got_bytes > 100 * 1024 * 1024
+        request_count > 2 AND
+    	got_bytes > 10 * 1024 * 1024
     )
+ORDER BY
+    ip DESC
+LIMIT 1000
+`
+
+const getIPSQL = `
+SELECT
+    RemoteIP AS ip,
+    count(*) AS request_count,
+    sum(BodySentBytes) AS got_bytes
+FROM csv
+GROUP BY
+    ip
+HAVING
+    got_bytes > 4 * 1024 * 1024 * 1024 OR
+    request_count >  1024
 ORDER BY
     ip DESC
 LIMIT 1000
@@ -69,8 +82,8 @@ var DataFormat = "2006-01-02-15"
 
 func init() {
 	now := time.Now()
-	endTime = now.Add(-time.Hour).Format(DataFormat)
-	startTime = now.AddDate(0, 0, -1).Format(DataFormat)
+	endTime = now.Format(DataFormat)
+	startTime = now.Add(-8*time.Hour).AddDate(0, 0, -1).Format(DataFormat)
 
 	pflag.StringVar(&cache, "cache", cache, "cache")
 	pflag.StringVar(&endpoint, "endpoint", "", "endpoint")
@@ -107,10 +120,18 @@ func (r *recorder) String() string {
 	w := csv.NewWriter(out)
 	for _, k := range keys {
 		v := r.list[k]
-		w.Write([]string{
-			k,
-			fmt.Sprintf("(重复的请求过多) Duplicate Request Count %d, Bytes %s, targets %v, https://github.com/DaoCloud/public-image-mirror/issues/34109", v.RequestCount, v.GotBytes, cleanList(v.List)),
-		})
+
+		if len(v.List) != 0 {
+			w.Write([]string{
+				k,
+				fmt.Sprintf("(近 24 小时, 重复拉取同一镜像, 请缓存镜像) Duplicate Request Count %d, Bytes %s, targets %v, https://github.com/DaoCloud/public-image-mirror/issues/34109", v.RequestCount, v.GotBytes, cleanList(v.List)),
+			})
+		} else {
+			w.Write([]string{
+				k,
+				fmt.Sprintf("(近 24 小时, 拉取次数或流量过多) Request Count %d, Bytes %s, https://github.com/DaoCloud/public-image-mirror/issues/34109", v.RequestCount, v.GotBytes),
+			})
+		}
 	}
 	w.Flush()
 	return out.String()
@@ -139,6 +160,10 @@ func (r *recorder) Write(record []string) error {
 	i := r.list[record[0]]
 	if i == nil {
 		i = &info{}
+	} else {
+		if len(record) <= 3 {
+			return nil
+		}
 	}
 
 	requestCount, err := strconv.Atoi(record[1])
@@ -155,7 +180,9 @@ func (r *recorder) Write(record []string) error {
 
 	i.GotBytes += geario.B(gotBytes)
 
-	i.List = append(i.List, record[3])
+	if len(record) > 3 {
+		i.List = append(i.List, record[3])
+	}
 
 	r.list[record[0]] = i
 	return nil
@@ -196,13 +223,17 @@ func main() {
 
 	record := newRecorder()
 
-	err = csv_sqlite.FromDB(context.Background(), tmp, record, getSQL)
+	err = csv_sqlite.FromDB(context.Background(), tmp, record, getIPAndPathSQL)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = csv_sqlite.FromDB(context.Background(), tmp, record, getIPSQL)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	fmt.Println(record.String())
-
 }
 
 const dataFormat = "2006-01-02-15"
