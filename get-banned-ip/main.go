@@ -34,14 +34,11 @@ GROUP BY
 HAVING
     (
         request_count > 1 AND
-    	got_bytes > 1024 * 1024 * 1024
+    	got_bytes > 100 * 1024 * 1024
     ) OR (
         request_count > 2 AND
     	got_bytes > 10 * 1024 * 1024
     )
-ORDER BY
-    ip DESC
-LIMIT 1000
 `
 
 const getIPSQL = `
@@ -53,11 +50,12 @@ FROM csv
 GROUP BY
     ip
 HAVING
-    got_bytes > 4 * 1024 * 1024 * 1024 OR
-    request_count >  1024
-ORDER BY
-    ip DESC
-LIMIT 1000
+    (
+        got_bytes > 4 * 1024 * 1024 * 1024
+    ) OR (
+        request_count > 1024 AND
+    	got_bytes > 10 * 1024 * 1024
+    )
 `
 
 var (
