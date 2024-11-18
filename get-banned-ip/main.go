@@ -61,6 +61,7 @@ LIMIT 1000
 `
 
 var (
+	now             = time.Now()
 	cache           = "./cache"
 	endpoint        string
 	bucket          string
@@ -81,7 +82,7 @@ var (
 var DataFormat = "2006-01-02-15"
 
 func init() {
-	now := time.Now()
+
 	endTime = now.Format(DataFormat)
 	startTime = now.Add(-8*time.Hour).AddDate(0, 0, -1).Format(DataFormat)
 
@@ -210,7 +211,7 @@ func main() {
 		)
 	})
 
-	tmp := fmt.Sprintf("%s.%d.db", endTime, time.Now().Unix())
+	tmp := fmt.Sprintf("%s.%d.db", endTime, now.Unix())
 
 	g.Go(func() error {
 		return csv_sqlite.CSV2DB(ctx, r, tmp, "csv")
