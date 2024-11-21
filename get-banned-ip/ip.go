@@ -67,6 +67,7 @@ func (r *ipRecorder) Write(record []string) error {
 	i := r.list[record[0]]
 	if i == nil {
 		i = &info{}
+		r.list[record[0]] = i
 	}
 
 	requestCount, err := strconv.Atoi(record[1])
@@ -83,6 +84,5 @@ func (r *ipRecorder) Write(record []string) error {
 
 	i.GotBytes += geario.B(gotBytes)
 
-	r.list[record[0]] = i
 	return nil
 }

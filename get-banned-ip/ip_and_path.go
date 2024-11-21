@@ -68,6 +68,7 @@ func (r *ipAndPathRecorder) Write(record []string) error {
 	i := r.list[record[0]]
 	if i == nil {
 		i = &info{}
+		r.list[record[0]] = i
 	}
 
 	requestCount, err := strconv.Atoi(record[1])
@@ -86,7 +87,6 @@ func (r *ipAndPathRecorder) Write(record []string) error {
 
 	i.List = append(i.List, record[3])
 
-	r.list[record[0]] = i
 	return nil
 }
 

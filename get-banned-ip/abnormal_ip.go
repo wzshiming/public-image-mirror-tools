@@ -25,12 +25,13 @@ GROUP BY
 `
 
 type abnormalIpRecorder struct {
-	list map[string]*info
+	ipGroup []*info
+	list    map[string]int
 }
 
 func newAbnormalIpRecorder() *abnormalIpRecorder {
 	return &abnormalIpRecorder{
-		list: map[string]*info{},
+		list: map[string]int{},
 	}
 }
 
@@ -44,14 +45,13 @@ func (r *abnormalIpRecorder) String() string {
 
 	w := csv.NewWriter(out)
 	for _, k := range keys {
-		v := r.list[k]
+		index := r.list[k]
 
-		list := append([]string{k}, v.List...)
-		sort.Strings(list)
+		v := r.ipGroup[index]
 
 		w.Write([]string{
 			k,
-			fmt.Sprintf("(禁用关联 IP 组) Request Count %d, Bytes %s, ip %s, https://github.com/DaoCloud/public-image-mirror/issues/34109", v.RequestCount, v.GotBytes, list),
+			fmt.Sprintf("(禁用关联 IP 组) Request Count %d, Bytes %s, ip %s, https://github.com/DaoCloud/public-image-mirror/issues/34109", v.RequestCount, v.GotBytes, v.List),
 		})
 
 	}
@@ -69,35 +69,50 @@ func (r *abnormalIpRecorder) Write(record []string) error {
 		return err
 	}
 
-	gotBytes, err := strconv.Atoi(record[2])
+	gotBytes, err := strconv.Atoi(record[3])
 	if err != nil {
 		return err
 	}
 
-	i := r.list[record[0]]
-	if i == nil {
-		i = &info{}
+	var i *info
+	index, ok := r.list[record[0]]
+	if !ok {
+		i = &info{
+			List: []string{record[0]},
+		}
+		r.ipGroup = append(r.ipGroup, i)
+
+		index = len(r.ipGroup) - 1
+	} else {
+		i = r.ipGroup[index]
 	}
 	i.RequestCount += requestCount
 	i.GotBytes += geario.B(gotBytes)
 
 	if !slices.Contains(i.List, record[1]) {
 		i.List = append(i.List, record[1])
+		sort.Strings(i.List)
 	}
-	r.list[record[0]] = i
 
 	for _, ip := range i.List {
-		i := r.list[ip]
-		if i == nil {
-			i = &info{}
-		}
-		i.RequestCount += requestCount
-		i.GotBytes += geario.B(gotBytes)
+		vindex, ok := r.list[ip]
+		if ok {
+			if vindex != index {
+				r.ipGroup[index].RequestCount += r.ipGroup[vindex].RequestCount
+				r.ipGroup[index].GotBytes += r.ipGroup[vindex].GotBytes
 
-		if !slices.Contains(i.List, record[0]) {
-			i.List = append(i.List, record[0])
+				for _, vip := range r.ipGroup[vindex].List {
+					if !slices.Contains(r.ipGroup[index].List, vip) {
+						r.ipGroup[index].List = append(r.ipGroup[index].List, vip)
+						sort.Strings(r.ipGroup[index].List)
+					}
+					r.list[vip] = index
+				}
+				r.ipGroup[vindex] = nil
+			}
+		} else {
+			r.list[ip] = index
 		}
-		r.list[ip] = i
 	}
 
 	return nil
