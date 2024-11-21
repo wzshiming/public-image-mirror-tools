@@ -1,15 +1,12 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/csv"
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -17,46 +14,11 @@ import (
 	"github.com/wzshiming/accesslog"
 	accesslog_aliyun_oss "github.com/wzshiming/accesslog-aliyun-oss"
 	"github.com/wzshiming/accesslog/tocsv"
+	"github.com/wzshiming/accesslog/unsafeutils"
 	csv_sqlite "github.com/wzshiming/csv-sqlite"
 	"github.com/wzshiming/geario"
 	"golang.org/x/sync/errgroup"
 )
-
-const getIPAndPathSQL = `
-SELECT
-    RemoteIP AS ip,
-    count(*) AS request_count,
-    sum(BodySentBytes) AS got_bytes,
-    RequestPath AS path
-FROM csv
-GROUP BY
-    ip, path
-HAVING
-    (
-        request_count > 1 AND
-    	got_bytes > 100 * 1024 * 1024
-    ) OR (
-        request_count > 2 AND
-    	got_bytes > 10 * 1024 * 1024
-    )
-`
-
-const getIPSQL = `
-SELECT
-    RemoteIP AS ip,
-    count(*) AS request_count,
-    sum(BodySentBytes) AS got_bytes
-FROM csv
-GROUP BY
-    ip
-HAVING
-    (
-        got_bytes > 4 * 1024 * 1024 * 1024
-    ) OR (
-        request_count > 1024 AND
-    	got_bytes > 10 * 1024 * 1024
-    )
-`
 
 var (
 	now             = time.Now()
@@ -69,11 +31,6 @@ var (
 	startTime string
 	endTime   string
 
-	fields = []string{
-		"RemoteIP",
-		"RequestPath",
-		"BodySentBytes",
-	}
 	condition = `self.RemoteIP != "10.10.0.10" && self.Operation == "GetObject"`
 )
 
@@ -96,95 +53,6 @@ type info struct {
 	RequestCount int
 	GotBytes     geario.B
 	List         []string
-}
-
-type recorder struct {
-	list map[string]*info
-}
-
-func newRecorder() *recorder {
-	return &recorder{
-		list: map[string]*info{},
-	}
-}
-
-func (r *recorder) String() string {
-	keys := make([]string, 0, len(r.list))
-	for k := range r.list {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	out := bytes.NewBuffer(nil)
-
-	w := csv.NewWriter(out)
-	for _, k := range keys {
-		v := r.list[k]
-
-		if len(v.List) != 0 {
-			w.Write([]string{
-				k,
-				fmt.Sprintf("(近 24 小时, 重复拉取同一镜像, 请缓存镜像) Duplicate Request Count %d, Bytes %s, targets %v, https://github.com/DaoCloud/public-image-mirror/issues/34109", v.RequestCount, v.GotBytes, cleanList(v.List)),
-			})
-		} else {
-			w.Write([]string{
-				k,
-				fmt.Sprintf("(近 24 小时, 拉取次数或流量过多) Request Count %d, Bytes %s, https://github.com/DaoCloud/public-image-mirror/issues/34109", v.RequestCount, v.GotBytes),
-			})
-		}
-	}
-	w.Flush()
-	return out.String()
-}
-
-func cleanList(s []string) []string {
-	sort.Strings(s)
-	for i := range s {
-		list := strings.Split(s[i], "/")
-		if len(list) > 2 {
-			l := list[len(list)-2]
-			if len(l) > 8 {
-				l = l[:8] + "..."
-			}
-			s[i] = l
-		}
-	}
-	return s
-}
-
-func (r *recorder) Write(record []string) error {
-	if record[0] == "ip" {
-		return nil
-	}
-
-	i := r.list[record[0]]
-	if i == nil {
-		i = &info{}
-	} else {
-		if len(record) <= 3 {
-			return nil
-		}
-	}
-
-	requestCount, err := strconv.Atoi(record[1])
-	if err != nil {
-		return err
-	}
-
-	i.RequestCount += requestCount
-
-	gotBytes, err := strconv.Atoi(record[2])
-	if err != nil {
-		return err
-	}
-
-	i.GotBytes += geario.B(gotBytes)
-
-	if len(record) > 3 {
-		i.List = append(i.List, record[3])
-	}
-
-	r.list[record[0]] = i
-	return nil
 }
 
 func main() {
@@ -220,19 +88,41 @@ func main() {
 	}
 	defer os.Remove(tmp)
 
-	record := newRecorder()
-
-	err = csv_sqlite.FromDB(context.Background(), tmp, record, getIPAndPathSQL)
-	if err != nil {
-		log.Fatal(err)
+	{
+		record := newIpAndImageRecorder()
+		err = csv_sqlite.FromDB(context.Background(), tmp, record, getIPAndImageSQL)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(record.String())
 	}
 
-	err = csv_sqlite.FromDB(context.Background(), tmp, record, getIPSQL)
-	if err != nil {
-		log.Fatal(err)
+	{
+		record := newIpAndPathRecorder()
+		err = csv_sqlite.FromDB(context.Background(), tmp, record, getIPAndPathSQL)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(record.String())
 	}
 
-	fmt.Println(record.String())
+	{
+		record := newIpRecorder()
+		err = csv_sqlite.FromDB(context.Background(), tmp, record, getIPSQL)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(record.String())
+	}
+
+	{
+		record := newAbnormalIpRecorder()
+		err = csv_sqlite.FromDB(context.Background(), tmp, record, getAbnormalIPSQL)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(record.String())
+	}
 }
 
 const dataFormat = "2006-01-02-15"
@@ -271,7 +161,7 @@ func run(
 		return err
 	}
 
-	ch := make(chan accesslog_aliyun_oss.AccessLogFormatted, 128)
+	ch := make(chan accessLogFormatted, 128)
 
 	go func() {
 		defer close(ch)
@@ -285,7 +175,26 @@ func run(
 				if err != nil {
 					return err
 				}
-				ch <- f
+
+				out := accessLogFormatted{
+					Operation:     f.Operation,
+					RemoteIP:      f.RemoteIP,
+					RequestPath:   f.RequestPath,
+					BodySentBytes: f.BodySentBytes,
+				}
+				q, err := url.ParseQuery(f.RequestQuery)
+				if err == nil && len(q) != 0 {
+					referer := q["referer"]
+					if len(referer) != 0 {
+						r := strings.Split(referer[0], ":")
+						if len(r) == 2 {
+							out.PullRemoteIP = r[0]
+							out.Image = r[1]
+						}
+					}
+				}
+
+				ch <- out
 				return nil
 			})
 			if err != nil {
@@ -294,5 +203,37 @@ func run(
 		}
 	}()
 
-	return tocsv.ProcessToCSV[accesslog_aliyun_oss.AccessLogFormatted](output, condition, fields, ch)
+	return tocsv.ProcessToCSV[accessLogFormatted](output, condition, fields, ch)
 }
+
+type accessLogFormatted struct {
+	Operation     string
+	RemoteIP      string
+	PullRemoteIP  string
+	RequestPath   string
+	Image         string
+	BodySentBytes string
+}
+
+func (e accessLogFormatted) Values(fields []string) []string {
+	accessLogEntryFieldsIndexMapping := unsafeutils.FieldsOffset[accessLogFormatted]()
+	out := make([]string, len(fields))
+	for i, f := range fields {
+		offset, ok := accessLogEntryFieldsIndexMapping[f]
+		if !ok {
+			continue
+		}
+		out[i] = unsafeutils.GetWithOffset[string](&e, offset)
+	}
+	return out
+}
+
+var (
+	fields = []string{
+		"RemoteIP",
+		"PullRemoteIP",
+		"RequestPath",
+		"Image",
+		"BodySentBytes",
+	}
+)
