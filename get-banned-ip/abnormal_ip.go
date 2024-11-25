@@ -35,6 +35,10 @@ func newAbnormalIpRecorder() *abnormalIpRecorder {
 	}
 }
 
+func (r *abnormalIpRecorder) SQL() string {
+	return getAbnormalIPSQL
+}
+
 func (r *abnormalIpRecorder) String() string {
 	keys := make([]string, 0, len(r.list))
 	for k := range r.list {

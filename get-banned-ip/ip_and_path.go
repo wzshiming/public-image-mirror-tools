@@ -40,6 +40,10 @@ func newIpAndPathRecorder() *ipAndPathRecorder {
 	}
 }
 
+func (r *ipAndPathRecorder) SQL() string {
+	return getIPAndPathSQL
+}
+
 func (r *ipAndPathRecorder) String() string {
 	keys := make([]string, 0, len(r.list))
 	for k := range r.list {

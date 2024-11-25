@@ -38,6 +38,10 @@ func newIpAndImageRecorder() *ipAndImageRecorder {
 	}
 }
 
+func (r *ipAndImageRecorder) SQL() string {
+	return getIPAndImageSQL
+}
+
 func (r *ipAndImageRecorder) String() string {
 	keys := make([]string, 0, len(r.list))
 	for k := range r.list {

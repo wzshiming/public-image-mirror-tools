@@ -50,9 +50,16 @@ func init() {
 }
 
 type info struct {
+	Name         string
 	RequestCount int
 	GotBytes     geario.B
 	List         []string
+}
+
+type Query interface {
+	csv_sqlite.CSVWriter
+	fmt.Stringer
+	SQL() string
 }
 
 func main() {
@@ -88,40 +95,19 @@ func main() {
 	}
 	defer os.Remove(tmp)
 
-	{
-		record := newIpAndImageRecorder()
-		err = csv_sqlite.FromDB(context.Background(), tmp, record, getIPAndImageSQL)
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println(record.String())
+	qs := []Query{
+		newIpAndImageRecorder(),
+		newIpAndPathRecorder(),
+		newIpRecorder(),
+		newAbnormalIpRecorder(),
 	}
 
-	{
-		record := newIpAndPathRecorder()
-		err = csv_sqlite.FromDB(context.Background(), tmp, record, getIPAndPathSQL)
+	for _, q := range qs {
+		err = csv_sqlite.FromDB(context.Background(), tmp, q, q.SQL())
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Println(record.String())
-	}
-
-	{
-		record := newIpRecorder()
-		err = csv_sqlite.FromDB(context.Background(), tmp, record, getIPSQL)
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println(record.String())
-	}
-
-	{
-		record := newAbnormalIpRecorder()
-		err = csv_sqlite.FromDB(context.Background(), tmp, record, getAbnormalIPSQL)
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println(record.String())
+		fmt.Println(q.String())
 	}
 }
 

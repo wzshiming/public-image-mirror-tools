@@ -37,6 +37,10 @@ func newIpRecorder() *ipRecorder {
 	}
 }
 
+func (r *ipRecorder) SQL() string {
+	return getIPSQL
+}
+
 func (r *ipRecorder) String() string {
 	keys := make([]string, 0, len(r.list))
 	for k := range r.list {
