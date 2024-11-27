@@ -99,7 +99,6 @@ func main() {
 		newIpAndImageRecorder(),
 		newIpAndPathRecorder(),
 		newIpRecorder(),
-		newAbnormalIpRecorder(),
 	}
 
 	for _, q := range qs {
