@@ -23,7 +23,7 @@ GROUP BY
     ip, image
 HAVING
     (
-        request_count > 50 AND
+        request_count > 100 AND
     	got_bytes > 10 * 1024 * 1024
     )
 `
