@@ -22,10 +22,10 @@ GROUP BY
     ip, path
 HAVING
     (
-        request_count > 5 AND
-    	got_bytes > 100 * 1024 * 1024
+        request_count > 100 AND
+    	got_bytes > 1024 * 1024 * 1024
     ) OR (
-        request_count > 10 AND
+        request_count > 1000 AND
     	got_bytes > 10 * 1024 * 1024
     )
 `

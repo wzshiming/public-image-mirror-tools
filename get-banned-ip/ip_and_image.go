@@ -24,7 +24,7 @@ GROUP BY
 HAVING
     (
         request_count > 100 AND
-    	got_bytes > 10 * 1024 * 1024
+    	got_bytes > 1024 * 1024 * 1024
     )
 `
 

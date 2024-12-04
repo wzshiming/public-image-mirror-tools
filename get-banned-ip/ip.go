@@ -20,10 +20,10 @@ GROUP BY
     ip
 HAVING
     (
-        got_bytes > 10 * 1024 * 1024 * 1024
+        got_bytes > 20 * 1024 * 1024 * 1024
     ) OR (
-        request_count > 1024 AND
-    	got_bytes > 100 * 1024 * 1024
+        request_count > 1000 AND
+    	got_bytes > 1024 * 1024 * 1024
     )
 `
 
